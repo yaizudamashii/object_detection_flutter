@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as imageLib;
@@ -19,9 +20,13 @@ class ImageUtils {
 
   /// Converts a [CameraImage] in BGRA888 format to [imageLib.Image] in RGB format
   static imageLib.Image convertBGRA8888ToImage(CameraImage cameraImage) {
+    int cameraImageLen = cameraImage.planes[0].bytes.length;
+    int planeWidth = cameraImage.planes[0].width;
+    int planeHeight = cameraImage.planes[0].height;
     imageLib.Image img = imageLib.Image.fromBytes(cameraImage.planes[0].width,
         cameraImage.planes[0].height, cameraImage.planes[0].bytes,
         format: imageLib.Format.bgra);
+    Uint8List imageBytes = img.getBytes(format: imageLib.Format.bgr); // seems like we should ignore alpha channel, even though the format is Format.bgra
     return img;
   }
 

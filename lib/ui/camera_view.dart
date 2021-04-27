@@ -67,8 +67,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
     cameras = await availableCameras();
 
     // cameras[0] for rear-camera
-    cameraController =
-        CameraController(cameras[0], ResolutionPreset.low, enableAudio: false);
+    cameraController = CameraController(cameras[0], ResolutionPreset.low, enableAudio: false);
 
     cameraController.initialize().then((_) async {
       // Stream of image passed to [onLatestImageAvailable] callback
@@ -104,7 +103,8 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
 
   /// Callback to receive each frame [CameraImage] perform inference on it
   onLatestImageAvailable(CameraImage cameraImage) async {
-    if (classifier.interpreter != null && classifier.labels != null) {
+    // if (classifier.interpreter != null && classifier.labels != null) {
+    if (classifier.interpreter != null) {
       // If previous inference has not completed then return
       if (predicting) {
         return;
@@ -117,8 +117,8 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
       var uiThreadTimeStart = DateTime.now().millisecondsSinceEpoch;
 
       // Data to be passed to inference isolate
-      var isolateData = IsolateData(
-          cameraImage, classifier.interpreter.address, classifier.labels);
+      // var isolateData = IsolateData(cameraImage, classifier.interpreter.address, classifier.labels);
+      var isolateData = IsolateData(cameraImage, classifier.interpreter.address);
 
       // We could have simply used the compute method as well however
       // it would be as in-efficient as we need to continuously passing data
@@ -127,8 +127,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
       /// perform inference in separate isolate
       Map<String, dynamic> inferenceResults = await inference(isolateData);
 
-      var uiThreadInferenceElapsedTime =
-          DateTime.now().millisecondsSinceEpoch - uiThreadTimeStart;
+      var uiThreadInferenceElapsedTime = DateTime.now().millisecondsSinceEpoch - uiThreadTimeStart;
 
       // pass results to HomeView
       widget.resultsCallback(inferenceResults["recognitions"]);
@@ -147,8 +146,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
   /// Runs inference in another isolate
   Future<Map<String, dynamic>> inference(IsolateData isolateData) async {
     ReceivePort responsePort = ReceivePort();
-    isolateUtils.sendPort
-        .send(isolateData..responsePort = responsePort.sendPort);
+    isolateUtils.sendPort.send(isolateData..responsePort = responsePort.sendPort);
     var results = await responsePort.first;
     return results;
   }

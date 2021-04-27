@@ -1,12 +1,17 @@
+import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as imageLib;
+import 'package:object_detection/helpers/posenet_helper.dart';
+import 'package:object_detection/tflite/flat_array.dart';
+import 'package:object_detection/tflite/posenet_model.dart';
 import 'package:object_detection/tflite/recognition.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:tflite_flutter_helper/tflite_flutter_helper.dart';
-
+import 'package:image/image.dart' as imageLib;
 import 'stats.dart';
 
 /// Classifier
@@ -17,11 +22,13 @@ class Classifier {
   /// Labels file loaded as list
   List<String> _labels;
 
-  static const String MODEL_FILE_NAME = "detect.tflite";
+  // static const String MODEL_FILE_NAME = "detect.tflite";
+  static const String MODEL_FILE_NAME = "posenet_mobilenet_v1_100_257x257_multi_kpt_stripped.tflite";
   static const String LABEL_FILE_NAME = "labelmap.txt";
 
   /// Input size of image (height = width = 300)
-  static const int INPUT_SIZE = 300;
+  // static const int INPUT_SIZE = 300;
+  static const int INPUT_SIZE = PoseNetModelInput.width;
 
   /// Result score threshold
   static const double THRESHOLD = 0.5;
@@ -34,9 +41,11 @@ class Classifier {
 
   /// Shapes of output tensors
   List<List<int>> _outputShapes;
+  List<Uint8List> _outputHeats;
 
   /// Types of output tensors
   List<TfLiteType> _outputTypes;
+  List<Uint8List> _outputOffsets;
 
   /// Number of results to show
   static const int NUM_RESULTS = 10;
@@ -46,7 +55,7 @@ class Classifier {
     List<String> labels,
   }) {
     loadModel(interpreter: interpreter);
-    loadLabels(labels: labels);
+    // loadLabels(labels: labels);
   }
 
   /// Loads interpreter from asset
@@ -55,15 +64,33 @@ class Classifier {
       _interpreter = interpreter ??
           await Interpreter.fromAsset(
             MODEL_FILE_NAME,
-            options: InterpreterOptions()..threads = 4,
+            // options: InterpreterOptions()..threads = 4,
+            options: InterpreterOptions()..threads = Platform.isIOS ? 2 : 4,
           );
 
+      var inputTensors = _interpreter.getInputTensors();
       var outputTensors = _interpreter.getOutputTensors();
+
+      // Tensor heatTensor = outputTensors[0];
+      // Tensor offsetsTensor = outputTensors[1];
+      // FlatArray heats = FlatArray(tensor: heatTensor);
+      // FlatArray offsets = FlatArray(tensor: offsetsTensor);
+      //
+      // List<List<int>> keypointPositions = PoseNetHelper.keypointPositions(heatMap: heats);
+      // List<List<double>> coords = PoseNetHelper.keypointCoordinates(keypointPositions: keypointPositions, offsets:  offsets);
+      // List<Point> scaledCoords = PoseNetHelper.scaledCoords(coords: coords);
+
       _outputShapes = [];
       _outputTypes = [];
+      // _outputHeats = [];
+      // _outputOffsets = [];
       outputTensors.forEach((tensor) {
+        // var dims = tensor.shape;
+        // var arr = tensor.data.toList();
         _outputShapes.add(tensor.shape);
         _outputTypes.add(tensor.type);
+        // _outputHeats.add(tensor.data);
+        // _outputOffsets.add(tensor.data);
       });
     } catch (e) {
       print("Error while creating interpreter: $e");
@@ -110,18 +137,20 @@ class Classifier {
     // Pre-process TensorImage
     inputImage = getProcessedImage(inputImage);
 
-    var preProcessElapsedTime =
-        DateTime.now().millisecondsSinceEpoch - preProcessStart;
+    var preProcessElapsedTime = DateTime.now().millisecondsSinceEpoch - preProcessStart;
 
     // TensorBuffers for output tensors
     TensorBuffer outputLocations = TensorBufferFloat(_outputShapes[0]);
     TensorBuffer outputClasses = TensorBufferFloat(_outputShapes[1]);
     TensorBuffer outputScores = TensorBufferFloat(_outputShapes[2]);
     TensorBuffer numLocations = TensorBufferFloat(_outputShapes[3]);
+    // TensorBuffer outputHeats = TensorBufferFloat(_outputHeats[0]);
+    // TensorBuffer outputOffsets = TensorBufferFloat(_outputOffsets[0]);
 
     // Inputs object for runForMultipleInputs
     // Use [TensorImage.buffer] or [TensorBuffer.buffer] to pass by reference
-    List<Object> inputs = [inputImage.buffer];
+    // List<Object> inputs = [inputImage.buffer];
+    List<Object> inputs = [inputImage.image.getBytes(format: imageLib.Format.bgr)];
 
     // Outputs map
     Map<int, Object> outputs = {
@@ -133,11 +162,13 @@ class Classifier {
 
     var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
 
-    // run inference
-    _interpreter.runForMultipleInputs(inputs, outputs);
+    TensorBuffer heatBuffer = TensorBuffer.createFixedSize(<int>[1, 9, 9, 17], TfLiteType.float32);
+    TensorBuffer offsetBuffer = TensorBuffer.createFixedSize(<int>[1, 9, 9, 34], TfLiteType.float32);
 
-    var inferenceTimeElapsed =
-        DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
+    // run inference
+    _interpreter.runForMultipleInputs(inputs, { 0: heatBuffer, 1: offsetBuffer });
+
+    var inferenceTimeElapsed = DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
 
     // Maximum number of results to show
     int resultsCount = min(NUM_RESULTS, numLocations.getIntValue(0));
@@ -179,8 +210,7 @@ class Classifier {
       }
     }
 
-    var predictElapsedTime =
-        DateTime.now().millisecondsSinceEpoch - predictStartTime;
+    var predictElapsedTime = DateTime.now().millisecondsSinceEpoch - predictStartTime;
 
     return {
       "recognitions": recognitions,
